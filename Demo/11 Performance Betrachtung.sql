@@ -9,14 +9,14 @@ create table csv_perf_source
   );
 
 create table csv_perf_steps
- ( step   number
+ ( step   varchar2(32)
  , stmt   clob
  );
 
 create table csv_perf_results
 ( runno   number
 , linecnt     number
-, step    number
+, step    varchar2(32)
 , runtime number
 , result  clob
 );
@@ -29,11 +29,11 @@ declare
   ctemp clob;
   testcases dbms_sql.number_table ;
 begin
-  testcases(1) := 10;
-  testcases(2) := 100;
-  testcases(3) := 500;
-  testcases(4) := 1000;
-  testcases(5) := 10000;
+  testcases(1) := 100;
+  testcases(2) := 1000;
+  testcases(3) := 5000;
+  testcases(4) := 10000;
+  testcases(5) := 50000;
   dbms_lob.createtemporary(ctemp,true);
   for i in testcases.first .. testcases.last loop
     for j in 1 .. testcases(i) loop
@@ -50,7 +50,7 @@ delete CSV_PERF_STEPS;
 
 /* Insert Steps */
 insert into CSV_PERF_STEPS(STEP,stmt)
-values (1,q'<
+values ('01 regexp Zeilenanfang',q'<
 insert into csv_perf_results ( runno, result)
 with
   csv as (select csv blb
@@ -71,7 +71,7 @@ select :runno, blb
 ;
 
 insert into CSV_PERF_STEPS(STEP,stmt)
-values (2,q'<
+values ('02 regexp +Zeilenende',q'<
 insert into csv_perf_results ( runno, result)
 with
   csv as (select csv blb
@@ -100,7 +100,7 @@ select :runno, blb
 ;
 
 insert into CSV_PERF_STEPS(STEP,stmt)
-values (3,q'<
+values ('03 regexp +Kommas',q'<
 insert into csv_perf_results ( runno, result)
 with
   csv as (select csv blb
@@ -137,12 +137,65 @@ select :runno, blb
 ;
 
 insert into CSV_PERF_STEPS(STEP,stmt)
-values (4,q'<
+values ('04 Komplett mit JSON_Table',q'<
 insert into csv_perf_results ( runno, result)
 with
   csv as (select csv blb
              from csv_perf_source
              where linecnt = :linecnt
+          )
+, jsn1 as ( -- Zeilenanfang
+            select regexp_replace( blb
+                                 , '^'
+                                 ,'['
+                                 ,1,0,'m'
+                                 ) blb
+              from csv
+          )
+, jsn2 as ( -- Zeilenende
+            select regexp_replace( blb
+                                 , '$'
+                                 ,']'
+                                 ,1,0,'m'
+                                 ) blb
+              from jsn1
+           )
+, jsn3 as ( -- Kommas zwischen Zeilen
+            select regexp_replace('['||blb||']'
+                                 , '\]'||chr(10)||'\['
+                                 , '],['
+                                 ,1,0,''
+                                 ) blb
+              from jsn2
+          )
+select :runno, max(zeile||' - '||spalte00)
+  from jsn3
+     , json_table( blb
+                 , '$[*]'
+                 columns ( zeile for ordinality
+                         , spalte00 varchar2 PATH '$[0]'
+                         , spalte01 varchar2 PATH '$[1]'
+                         , spalte02 varchar2 PATH '$[2]'
+                         , spalte03 varchar2 PATH '$[3]'
+                         , spalte04 varchar2 PATH '$[4]'
+                         , spalte05 varchar2 PATH '$[5]'
+                         , spalte06 varchar2 PATH '$[6]'
+                         , spalte07 varchar2 PATH '$[7]'
+                         , spalte08 varchar2 PATH '$[8]'
+                         , spalte09 varchar2 PATH '$[9]'
+                         , spalte10 varchar2 PATH '$[10]'
+                         )
+                 )
+>')
+;
+insert into CSV_PERF_STEPS(STEP,stmt)
+values ('05 Nur JSON_Table',q'<
+insert into csv_perf_results ( runno, result)
+with
+  csv as (select result blb
+             from csv_perf_results
+             where linecnt = :linecnt
+               and step = '03 regexp +Kommas'
           )
 , jsn1 as ( -- Zeilenanfang
             select regexp_replace( blb
@@ -201,9 +254,9 @@ declare
   time2 timestamp;
   durat  number;
 begin
-  for tc in (select linecnt, size_bytes, csv from csv_perf_source)
+  for tc in (select linecnt, size_bytes, csv from csv_perf_source order by linecnt)
   loop
-    for tstep in (select step, stmt from csv_perf_steps)
+    for tstep in (select step, stmt from csv_perf_steps order by step)
     loop
       l_runno := l_runno +1;
       time1 := systimestamp;
@@ -234,5 +287,3 @@ commit;
 
 select linecnt, step, runtime from CSV_PERF_RESULTS
 order by step, linecnt;
-
-

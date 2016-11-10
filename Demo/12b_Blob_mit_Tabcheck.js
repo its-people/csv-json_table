@@ -11,7 +11,7 @@ var tabCnt = util.executeReturnOneCol('select count(*) ' +
 
 if (tabCnt == 0){
     ctx.write("Tabelle CSV_TAB nicht vorhanden, lege sie an.\n");
-    if ( !util.execute('create table CSV_TAB(csv blob, pfad varchar2(255))')
+    if ( !util.execute('create table CSV_TAB(csv clob, pfad varchar2(255))')
        ) {
         ctx.write("Tabelle anlegen fehlgeschlagen exit.\n");
         exit;
@@ -26,12 +26,11 @@ var filePath=args[1];
 /*
 Für  Blob:
 */
-var blob=conn.createBlob();
-var bstream=blob.setBinaryStream(1);
-/*
+//var blob=conn.createBlob();
+//var bstream=blob.setBinaryStream(1);
+
 var blob=conn.createClob();
-var bstream=blob.setCharacterStream(1);
-*/
+var bstream=blob.setAsciiStream(1);
 /* den Blob einlesen */
 java.nio.file.Files.copy( java.nio.file.FileSystems.getDefault().getPath(filePath)
                         , bstream );
@@ -46,8 +45,8 @@ if(!util.execute( "insert into csv_tab(csv,pfad) values(:csv, :pfad)"
   ){ ctx.write("insert fehlgeschlagen exit.\n");
      exit;
 }
-sqlcl.setStmt("commit;");
-sqlcl.run();
-sqlcl.setStmt( "select pfad,dbms_lob.getlength(csv) "
+sqlcl.setStmt( "commit; \n"
+             + "set sqlformat ansiconsole \n"
+             + " select pfad,dbms_lob.getlength(csv) "
              + "from csv_tab;");
 sqlcl.run();
